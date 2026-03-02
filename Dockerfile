@@ -2,50 +2,38 @@ FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
 
 WORKDIR /app
 
-# -----------------------------
-# System deps
-# -----------------------------
+# deps del sistema (git para HF, ffmpeg por si luego haces video, libgl por opencv)
 RUN apt-get update && apt-get install -y \
-    git \
-    ffmpeg \
-    libgl1 \
-    wget \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+  git \
+  ffmpeg \
+  libgl1 \
+  libglib2.0-0 \
+  && rm -rf /var/lib/apt/lists/*
 
-# -----------------------------
-# Python deps
-# -----------------------------
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Requirements
 COPY requirements.txt /app/requirements.txt
-
-RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# -----------------------------
-# HuggingFace cache optimization
-# (IMPORTANT for RunPod volume performance)
-# -----------------------------
-ENV HF_HOME=/runpod-volume/hf
-ENV HF_HUB_CACHE=/runpod-volume/hf
-ENV TRANSFORMERS_CACHE=/runpod-volume/hf
-ENV DIFFUSERS_CACHE=/runpod-volume/hf
-ENV TORCH_HOME=/runpod-volume/torch
+# IMPORTANT: el script usa datasets + torchvision (no estaban en tu requirements)
+RUN pip install --no-cache-dir \
+  datasets==2.20.0 \
+  torchvision==0.18.1 \
+  huggingface_hub==0.24.6 \
+  packaging==24.1 \
+  tqdm==4.66.5 \
+  einops==0.8.0
 
-RUN mkdir -p /runpod-volume/hf
-RUN mkdir -p /runpod-volume/torch
+# Opcional: xformers para acelerar y reducir memoria (A100 lo soporta)
+# Si te da problemas, comenta esta línea.
+RUN pip install --no-cache-dir xformers==0.0.27.post2
 
-# -----------------------------
-# Copy app
-# -----------------------------
+# Copy code
 COPY . /app
 
-# -----------------------------
-# Accelerate config (auto)
-# -----------------------------
-RUN accelerate config default
+# sanity: asegúrate que tu script exista
+RUN test -f /app/scripts/train_text_to_image_lora_sdxl.py
 
-# -----------------------------
-# Start handler
-# -----------------------------
 CMD ["python", "-u", "handler.py"]
