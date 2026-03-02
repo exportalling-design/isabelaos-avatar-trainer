@@ -5,17 +5,22 @@ Pillow==10.4.0
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
 
-# Training stack
-accelerate==0.33.0
-diffusers==0.30.3
-transformers==4.44.2
+# --- Core ML (estables) ---
+# NOTA: RunPod ya trae torch en la imagen base normalmente. No lo fijamos aquí para evitar conflictos.
+accelerate==0.34.2
+diffusers==0.36.0
+transformers==4.48.2
 safetensors==0.4.5
-peft==0.12.0
+peft==0.14.0
+huggingface_hub==0.26.2
 
-# Required for SDXL training scripts
+# --- SDXL LoRA training deps ---
 datasets==2.21.0
 torchvision==0.18.1
-huggingface_hub==0.24.6
 tqdm==4.66.5
 protobuf==4.25.4
 sentencepiece==0.2.0
+
+# Muy común que el script lo requiera en runtime (logs/args)
+omegaconf==2.3.0
+pyyaml==6.0.2
