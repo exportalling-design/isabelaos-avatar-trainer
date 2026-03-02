@@ -1,9 +1,13 @@
-
 import os
+import json
 import subprocess
 from typing import Dict, Any
 
-from config import BASE_VOLUME, SDXL_BASE_ID, HF_HOME, HF_HUB_CACHE, TRANSFORMERS_CACHE, DIFFUSERS_CACHE, TORCH_HOME
+from config import HF_HOME, HF_HUB_CACHE, TRANSFORMERS_CACHE, DIFFUSERS_CACHE, TORCH_HOME, SDXL_BASE_ID
+
+DIFFUSERS_SCRIPT_URL = (
+    "https://raw.githubusercontent.com/huggingface/diffusers/main/examples/text_to_image/train_text_to_image_lora_sdxl.py"
+)
 
 def run_cmd(cmd: list, env: dict) -> None:
     p = subprocess.Popen(cmd, env=env)
@@ -11,11 +15,75 @@ def run_cmd(cmd: list, env: dict) -> None:
     if code != 0:
         raise RuntimeError(f"Training command failed with exit code {code}")
 
+def _is_image(fn: str) -> bool:
+    f = fn.lower()
+    return f.endswith(".jpg") or f.endswith(".jpeg") or f.endswith(".png") or f.endswith(".webp")
+
+def ensure_metadata_jsonl(dataset_dir: str, fallback_trigger: str) -> str:
+    """
+    Crea metadata.jsonl para diffusers usando captions .txt (si existen).
+    Formato esperado por datasets imagefolder: {"file_name":"xxx.jpg","text":"caption"}
+    """
+    meta_path = os.path.join(dataset_dir, "metadata.jsonl")
+    items = []
+
+    # Recorremos imágenes en dataset_dir
+    for fn in sorted(os.listdir(dataset_dir)):
+        if not _is_image(fn):
+            continue
+
+        img_path = os.path.join(dataset_dir, fn)
+        txt_path = os.path.splitext(img_path)[0] + ".txt"
+
+        caption = fallback_trigger
+        if os.path.exists(txt_path):
+            try:
+                with open(txt_path, "r", encoding="utf-8") as f:
+                    caption = (f.read() or "").strip() or fallback_trigger
+            except:
+                caption = fallback_trigger
+
+        items.append({"file_name": fn, "text": caption})
+
+    if len(items) == 0:
+        raise RuntimeError("Dataset is empty: no images found in dataset_dir")
+
+    # Escribimos jsonl
+    with open(meta_path, "w", encoding="utf-8") as f:
+        for it in items:
+            f.write(json.dumps(it, ensure_ascii=False) + "\n")
+
+    return meta_path
+
+def ensure_diffusers_sdxl_script(local_dir: str) -> str:
+    """
+    Asegura que exista el script train_text_to_image_lora_sdxl.py.
+    Primero intenta local (por si lo metiste al repo /app/scripts),
+    si no, lo descarga a /tmp.
+    """
+    # 1) Si tú lo metes en tu repo/imagen, ponlo aquí:
+    local_candidate = os.path.join(local_dir, "scripts", "train_text_to_image_lora_sdxl.py")
+    if os.path.exists(local_candidate):
+        return local_candidate
+
+    # 2) Descarga a /tmp si no existe
+    tmp_path = "/tmp/train_text_to_image_lora_sdxl.py"
+    if os.path.exists(tmp_path):
+        return tmp_path
+
+    # usamos curl o wget (el que exista)
+    if subprocess.call(["bash", "-lc", "command -v curl >/dev/null 2>&1"]) == 0:
+        cmd = ["bash", "-lc", f"curl -L --retry 3 -o {tmp_path} {DIFFUSERS_SCRIPT_URL}"]
+    else:
+        cmd = ["bash", "-lc", f"wget -O {tmp_path} {DIFFUSERS_SCRIPT_URL}"]
+
+    code = subprocess.call(cmd)
+    if code != 0 or not os.path.exists(tmp_path):
+        raise RuntimeError("Could not download diffusers SDXL LoRA training script (no internet?)")
+
+    return tmp_path
+
 def train_sdxl_lora(job: Dict[str, Any]) -> str:
-    """
-    Entrena LoRA SDXL con script de diffusers (incluido por pip).
-    Output: ruta local al .safetensors
-    """
     dataset_dir = job["dataset_dir"]
     out_dir = job["out_dir"]
     trigger = job["trigger"]
@@ -36,19 +104,13 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     env["DIFFUSERS_CACHE"] = DIFFUSERS_CACHE
     env["TORCH_HOME"] = TORCH_HOME
 
-    # Script oficial diffusers (ya viene instalado con diffusers)
-    # Nota: en algunas versiones la ruta cambia; este path suele funcionar:
-    script = os.path.join(os.path.dirname(__file__), "scripts", "train_text_to_image_lora_sdxl.py")
+    # ✅ 1) Crear metadata.jsonl desde tus .txt (para que diffusers funcione)
+    ensure_metadata_jsonl(dataset_dir, fallback_trigger=trigger)
 
-    # Si no existe, usamos el que trae diffusers en site-packages
-    if not os.path.exists(script):
-        import diffusers
-        base = os.path.dirname(diffusers.__file__)
-        script = os.path.join(base, "examples", "text_to_image", "train_text_to_image_lora_sdxl.py")
+    # ✅ 2) Encontrar / descargar script SDXL LoRA
+    script = ensure_diffusers_sdxl_script(local_dir=os.path.dirname(__file__))
 
-    if not os.path.exists(script):
-        raise RuntimeError("Could not find diffusers SDXL LoRA training script")
-
+    # ✅ 3) Ejecutar entrenamiento
     cmd = [
         "accelerate", "launch",
         "--mixed_precision=fp16",
@@ -70,9 +132,15 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
 
     run_cmd(cmd, env=env)
 
-    # El script deja pesos en output_dir; buscamos el .safetensors
+    # ✅ 4) Buscar safetensors
+    candidates = []
     for fn in os.listdir(out_dir):
         if fn.endswith(".safetensors"):
-            return os.path.join(out_dir, fn)
+            candidates.append(os.path.join(out_dir, fn))
+
+    if candidates:
+        # devolvemos el más nuevo
+        candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        return candidates[0]
 
     raise RuntimeError("No .safetensors produced in output_dir")
