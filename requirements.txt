@@ -1,26 +1,23 @@
 runpod==1.7.0
 supabase==2.6.0
 python-dotenv==1.0.1
+
 Pillow==10.4.0
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
 
-# --- Core ML (estables) ---
-# NOTA: torch y torchvision vienen de la imagen base pytorch/pytorch. NO los fijes aquí.
 accelerate==0.34.2
 diffusers==0.36.0
 transformers==4.48.2
-safetensors==0.4.5
 peft==0.14.0
+safetensors==0.4.5
 huggingface_hub==0.26.2
 
-# --- SDXL LoRA training deps ---
 datasets==2.21.0
 tqdm==4.66.5
 protobuf==4.25.4
 sentencepiece==0.2.0
 
-# Muy común que el script lo requiera en runtime (logs/args/config)
 omegaconf==2.3.0
 pyyaml==6.0.2
 packaging==24.1
