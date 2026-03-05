@@ -6,7 +6,7 @@ opencv-python-headless==4.10.0.84
 numpy==1.26.4
 
 # --- Core ML (estables) ---
-# NOTA: RunPod ya trae torch en la imagen base normalmente. No lo fijamos aquí para evitar conflictos.
+# NOTA: torch y torchvision vienen de la imagen base pytorch/pytorch. NO los fijes aquí.
 accelerate==0.34.2
 diffusers==0.36.0
 transformers==4.48.2
@@ -16,11 +16,12 @@ huggingface_hub==0.26.2
 
 # --- SDXL LoRA training deps ---
 datasets==2.21.0
-torchvision==0.18.1
 tqdm==4.66.5
 protobuf==4.25.4
 sentencepiece==0.2.0
 
-# Muy común que el script lo requiera en runtime (logs/args)
+# Muy común que el script lo requiera en runtime (logs/args/config)
 omegaconf==2.3.0
 pyyaml==6.0.2
+packaging==24.1
+einops==0.8.0
