@@ -1,4 +1,3 @@
-
 import json
 import os
 import subprocess
@@ -14,7 +13,7 @@ from config import (
 )
 
 DIFFUSERS_SCRIPT_URL = (
-    "https://raw.githubusercontent.com/huggingface/diffusers/v0.36.0/examples/text_to_image/train_text_to_image_lora_sdxl.py"
+    "https://raw.githubusercontent.com/huggingface/diffusers/v0.29.2/examples/text_to_image/train_text_to_image_lora_sdxl.py"
 )
 
 
@@ -116,7 +115,6 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     steps = int(job.get("steps", 1200))
     lr = float(job.get("lr", 1e-4))
     rank = int(job.get("rank", 16))
-    alpha = int(job.get("alpha", 16))
     batch = int(job.get("batch", 1))
     grad_acc = int(job.get("grad_acc", 4))
 
@@ -129,15 +127,20 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     env["DIFFUSERS_CACHE"] = DIFFUSERS_CACHE
     env["TORCH_HOME"] = TORCH_HOME
 
-    # logs útiles para confirmar compatibilidad
     try:
         import torch
         import torchvision
+        import diffusers
+        import transformers
+        import accelerate
 
         print(f"[train_job] torch={torch.__version__}")
         print(f"[train_job] torchvision={torchvision.__version__}")
+        print(f"[train_job] diffusers={diffusers.__version__}")
+        print(f"[train_job] transformers={transformers.__version__}")
+        print(f"[train_job] accelerate={accelerate.__version__}")
     except Exception as e:
-        print(f"[train_job] Warning importing torch/torchvision for version log: {repr(e)}")
+        print(f"[train_job] Version log warning: {repr(e)}")
 
     ensure_metadata_jsonl(dataset_dir, fallback_trigger=trigger)
     script = ensure_diffusers_sdxl_script(local_dir=os.path.dirname(__file__))
@@ -174,7 +177,7 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
         "--validation_epochs",
         "999999",
         "--report_to",
-        "none",
+        "tensorboard",
         "--dataloader_num_workers",
         "0",
         "--seed",
