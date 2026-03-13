@@ -21,13 +21,13 @@ def _is_image(fn: str) -> bool:
 
 def ensure_metadata_jsonl(dataset_dir: str, fallback_trigger: str) -> str:
     """
-    Crea metadata.jsonl para diffusers usando captions .txt (si existen).
-    Formato esperado por datasets imagefolder: {"file_name":"xxx.jpg","text":"caption"}
+    Crea metadata.jsonl para diffusers usando captions .txt si existen.
+    Formato esperado:
+    {"file_name":"xxx.jpg","text":"caption"}
     """
     meta_path = os.path.join(dataset_dir, "metadata.jsonl")
     items = []
 
-    # Recorremos imágenes en dataset_dir
     for fn in sorted(os.listdir(dataset_dir)):
         if not _is_image(fn):
             continue
@@ -40,7 +40,7 @@ def ensure_metadata_jsonl(dataset_dir: str, fallback_trigger: str) -> str:
             try:
                 with open(txt_path, "r", encoding="utf-8") as f:
                     caption = (f.read() or "").strip() or fallback_trigger
-            except:
+            except Exception:
                 caption = fallback_trigger
 
         items.append({"file_name": fn, "text": caption})
@@ -48,7 +48,6 @@ def ensure_metadata_jsonl(dataset_dir: str, fallback_trigger: str) -> str:
     if len(items) == 0:
         raise RuntimeError("Dataset is empty: no images found in dataset_dir")
 
-    # Escribimos jsonl
     with open(meta_path, "w", encoding="utf-8") as f:
         for it in items:
             f.write(json.dumps(it, ensure_ascii=False) + "\n")
@@ -57,30 +56,46 @@ def ensure_metadata_jsonl(dataset_dir: str, fallback_trigger: str) -> str:
 
 def ensure_diffusers_sdxl_script(local_dir: str) -> str:
     """
-    Asegura que exista el script train_text_to_image_lora_sdxl.py.
-    Primero intenta local (por si lo metiste al repo /app/scripts),
-    si no, lo descarga a /tmp.
-    """
-    # 1) Si tú lo metes en tu repo/imagen, ponlo aquí:
-    local_candidate = os.path.join(local_dir, "scripts", "train_text_to_image_lora_sdxl.py")
-    if os.path.exists(local_candidate):
-        return local_candidate
+    Busca primero el script dentro de la imagen:
+    - /app/scripts/train_text_to_image_lora_sdxl.py
+    - /app/train_text_to_image_lora_sdxl.py
+    - <local_dir>/scripts/train_text_to_image_lora_sdxl.py
+    - <local_dir>/train_text_to_image_lora_sdxl.py
 
-    # 2) Descarga a /tmp si no existe
+    Si no existe, intenta descargarlo a /tmp.
+    """
+    candidates = [
+        "/app/scripts/train_text_to_image_lora_sdxl.py",
+        "/app/train_text_to_image_lora_sdxl.py",
+        os.path.join(local_dir, "scripts", "train_text_to_image_lora_sdxl.py"),
+        os.path.join(local_dir, "train_text_to_image_lora_sdxl.py"),
+    ]
+
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            print(f"[train_job] Using local SDXL script: {candidate}")
+            return candidate
+
     tmp_path = "/tmp/train_text_to_image_lora_sdxl.py"
     if os.path.exists(tmp_path):
+        print(f"[train_job] Using cached tmp SDXL script: {tmp_path}")
         return tmp_path
 
-    # usamos curl o wget (el que exista)
-    if subprocess.call(["bash", "-lc", "command -v curl >/dev/null 2>&1"]) == 0:
+    has_curl = subprocess.call(["bash", "-lc", "command -v curl >/dev/null 2>&1"]) == 0
+    has_wget = subprocess.call(["bash", "-lc", "command -v wget >/dev/null 2>&1"]) == 0
+
+    if has_curl:
         cmd = ["bash", "-lc", f"curl -L --retry 3 -o {tmp_path} {DIFFUSERS_SCRIPT_URL}"]
-    else:
+    elif has_wget:
         cmd = ["bash", "-lc", f"wget -O {tmp_path} {DIFFUSERS_SCRIPT_URL}"]
+    else:
+        raise RuntimeError("Neither curl nor wget is available in container")
 
     code = subprocess.call(cmd)
     if code != 0 or not os.path.exists(tmp_path):
         raise RuntimeError("Could not download diffusers SDXL LoRA training script (no internet?)")
 
+    print(f"[train_job] Downloaded SDXL script to: {tmp_path}")
     return tmp_path
 
 def train_sdxl_lora(job: Dict[str, Any]) -> str:
@@ -104,13 +119,13 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     env["DIFFUSERS_CACHE"] = DIFFUSERS_CACHE
     env["TORCH_HOME"] = TORCH_HOME
 
-    # ✅ 1) Crear metadata.jsonl desde tus .txt (para que diffusers funcione)
+    # 1) Crear metadata.jsonl
     ensure_metadata_jsonl(dataset_dir, fallback_trigger=trigger)
 
-    # ✅ 2) Encontrar / descargar script SDXL LoRA
+    # 2) Encontrar / descargar script
     script = ensure_diffusers_sdxl_script(local_dir=os.path.dirname(__file__))
 
-    # ✅ 3) Ejecutar entrenamiento
+    # 3) Ejecutar entrenamiento
     cmd = [
         "accelerate", "launch",
         "--mixed_precision=fp16",
@@ -123,23 +138,27 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
         "--max_train_steps", str(steps),
         "--learning_rate", str(lr),
         "--rank", str(rank),
-        "--lora_alpha", str(alpha),
         "--output_dir", out_dir,
         "--checkpointing_steps", "0",
         "--validation_prompt", f"{trigger}, portrait photo",
         "--seed", "42",
     ]
 
+    # Solo usa --lora_alpha si tu script realmente lo soporta
+    # Muchos scripts oficiales de diffusers usan solo --rank
+    if alpha:
+        pass
+
+    print(f"[train_job] Running SDXL LoRA script: {script}")
     run_cmd(cmd, env=env)
 
-    # ✅ 4) Buscar safetensors
+    # 4) Buscar .safetensors
     candidates = []
     for fn in os.listdir(out_dir):
         if fn.endswith(".safetensors"):
             candidates.append(os.path.join(out_dir, fn))
 
     if candidates:
-        # devolvemos el más nuevo
         candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
         return candidates[0]
 
