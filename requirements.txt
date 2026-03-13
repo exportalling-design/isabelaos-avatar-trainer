@@ -9,9 +9,9 @@ numpy
 accelerate==0.31.0
 diffusers==0.29.2
 transformers==4.41.2
+peft==0.10.0
 
 safetensors
-peft
 huggingface_hub
 
 datasets
