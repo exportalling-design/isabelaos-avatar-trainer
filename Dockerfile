@@ -1,21 +1,20 @@
-FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
+FROM runpod/pytorch:2.1.0-py3.10-cuda12.1.1-devel
 
 WORKDIR /app
 
+# instalar utilidades necesarias
 RUN apt-get update && apt-get install -y \
     git \
+    wget \
+    curl \
     ffmpeg \
-    libgl1 \
-    libglib2.0-0 \
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --upgrade pip setuptools wheel
-
-COPY requirements.txt /app/
-
+# instalar dependencias python
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . /app
+# copiar código
+COPY . .
 
-CMD ["python", "-u", "handler.py"]
+CMD ["python", "handler.py"]
