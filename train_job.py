@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import subprocess
 from typing import Dict, Any
 
@@ -13,14 +13,11 @@ from config import (
 )
 
 DIFFUSERS_SCRIPT_URL = (
-    "https://raw.githubusercontent.com/huggingface/diffusers/main/examples/text_to_image/train_text_to_image_lora_sdxl.py"
+    "https://raw.githubusercontent.com/huggingface/diffusers/v0.36.0/examples/text_to_image/train_text_to_image_lora_sdxl.py"
 )
 
 
 def run_cmd(cmd: list, env: dict) -> None:
-    print("[train_job] Running command:")
-    print(" ".join(cmd))
-
     p = subprocess.Popen(
         cmd,
         env=env,
@@ -28,23 +25,19 @@ def run_cmd(cmd: list, env: dict) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-
     stdout, stderr = p.communicate()
 
-    if stdout:
-        print("[train_job][stdout]")
-        print(stdout)
+    print("STDOUT:")
+    print(stdout or "")
 
-    if stderr:
-        print("[train_job][stderr]")
-        print(stderr)
+    print("STDERR:")
+    print(stderr or "")
 
     if p.returncode != 0:
-        raise RuntimeError(
-            f"Training command failed with exit code {p.returncode}\n"
-            f"STDERR:\n{stderr}\n"
-            f"STDOUT:\n{stdout}"
-        )
+        msg = f"Training command failed with exit code {p.returncode}"
+        if stderr:
+            msg += f"\nSTDERR:\n{stderr[-4000:]}"
+        raise RuntimeError(msg)
 
 
 def _is_image(fn: str) -> bool:
@@ -53,11 +46,6 @@ def _is_image(fn: str) -> bool:
 
 
 def ensure_metadata_jsonl(dataset_dir: str, fallback_trigger: str) -> str:
-    """
-    Crea metadata.jsonl para diffusers usando captions .txt si existen.
-    Formato:
-      {"file_name":"xxx.jpg","text":"caption"}
-    """
     meta_path = os.path.join(dataset_dir, "metadata.jsonl")
     items = []
 
@@ -85,20 +73,13 @@ def ensure_metadata_jsonl(dataset_dir: str, fallback_trigger: str) -> str:
         for it in items:
             f.write(json.dumps(it, ensure_ascii=False) + "\n")
 
-    print(f"[train_job] metadata.jsonl created with {len(items)} items at {meta_path}")
     return meta_path
 
 
 def ensure_diffusers_sdxl_script(local_dir: str) -> str:
-    """
-    Busca el script localmente; si no existe, lo descarga a /tmp.
-    """
     candidates = [
         os.path.join(local_dir, "scripts", "train_text_to_image_lora_sdxl.py"),
         os.path.join(local_dir, "train_text_to_image_lora_sdxl.py"),
-        "/app/scripts/train_text_to_image_lora_sdxl.py",
-        "/app/train_text_to_image_lora_sdxl.py",
-        "/tmp/train_text_to_image_lora_sdxl.py",
     ]
 
     for c in candidates:
@@ -107,13 +88,16 @@ def ensure_diffusers_sdxl_script(local_dir: str) -> str:
             return c
 
     tmp_path = "/tmp/train_text_to_image_lora_sdxl.py"
+    if os.path.exists(tmp_path):
+        print(f"[train_job] Using cached tmp script: {tmp_path}")
+        return tmp_path
 
     if subprocess.call(["bash", "-lc", "command -v curl >/dev/null 2>&1"]) == 0:
         cmd = ["bash", "-lc", f"curl -L --retry 3 -o {tmp_path} {DIFFUSERS_SCRIPT_URL}"]
     elif subprocess.call(["bash", "-lc", "command -v wget >/dev/null 2>&1"]) == 0:
         cmd = ["bash", "-lc", f"wget -O {tmp_path} {DIFFUSERS_SCRIPT_URL}"]
     else:
-        raise RuntimeError("Neither curl nor wget is available to fetch diffusers script")
+        raise RuntimeError("Neither curl nor wget is available to download training script")
 
     code = subprocess.call(cmd)
     if code != 0 or not os.path.exists(tmp_path):
@@ -131,6 +115,7 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     steps = int(job.get("steps", 1200))
     lr = float(job.get("lr", 1e-4))
     rank = int(job.get("rank", 16))
+    alpha = int(job.get("alpha", 16))
     batch = int(job.get("batch", 1))
     grad_acc = int(job.get("grad_acc", 4))
 
@@ -143,17 +128,19 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     env["DIFFUSERS_CACHE"] = DIFFUSERS_CACHE
     env["TORCH_HOME"] = TORCH_HOME
 
-    # Para evitar prompts interactivos raros
-    env["HF_HUB_DISABLE_TELEMETRY"] = "1"
-    env["TOKENIZERS_PARALLELISM"] = "false"
+    # logs útiles para confirmar compatibilidad
+    try:
+        import torch
+        import torchvision
 
-    # 1) Crear metadata para imagefolder
+        print(f"[train_job] torch={torch.__version__}")
+        print(f"[train_job] torchvision={torchvision.__version__}")
+    except Exception as e:
+        print(f"[train_job] Warning importing torch/torchvision for version log: {repr(e)}")
+
     ensure_metadata_jsonl(dataset_dir, fallback_trigger=trigger)
-
-    # 2) Obtener script
     script = ensure_diffusers_sdxl_script(local_dir=os.path.dirname(__file__))
 
-    # 3) Ejecutar entrenamiento
     cmd = [
         "accelerate",
         "launch",
@@ -195,7 +182,6 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
 
     run_cmd(cmd, env=env)
 
-    # 4) Buscar el .safetensors de salida
     candidates = []
     for fn in os.listdir(out_dir):
         if fn.endswith(".safetensors"):
@@ -203,8 +189,6 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
 
     if candidates:
         candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-        best = candidates[0]
-        print(f"[train_job] Found safetensors: {best}")
-        return best
+        return candidates[0]
 
     raise RuntimeError("No .safetensors produced in output_dir")
