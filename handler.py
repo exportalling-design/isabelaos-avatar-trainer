@@ -9,10 +9,15 @@ from supabase_io import download_objects, upload_file, delete_objects
 from dataset_prep import simple_prep, write_captions
 from train_job import train_sdxl_lora
 
+
 def handler(event: Dict[str, Any]) -> Dict[str, Any]:
     try:
         input_data = event.get("input") or {}
         action = (input_data.get("action") or "").strip()
+
+        print(f"[handler] action={action}")
+        print(f"[handler] input keys={list(input_data.keys())}")
+
         if action != "avatar_train":
             return {"ok": False, "error": "INVALID_ACTION", "expected": "avatar_train"}
 
@@ -21,10 +26,18 @@ def handler(event: Dict[str, Any]) -> Dict[str, Any]:
         trigger = (input_data.get("trigger") or "").strip()
         photo_paths = input_data.get("photos") or []
 
-        if not avatar_id or not user_id or not trigger or not photo_paths:
-            return {"ok": False, "error": "MISSING_FIELDS", "need": ["avatar_id", "user_id", "trigger", "photos[]"]}
+        print(f"[handler] avatar_id={avatar_id}")
+        print(f"[handler] user_id={user_id}")
+        print(f"[handler] trigger={trigger}")
+        print(f"[handler] photo_paths={photo_paths}")
 
-        # Rutas en tu volume
+        if not avatar_id or not user_id or not trigger or not photo_paths:
+            return {
+                "ok": False,
+                "error": "MISSING_FIELDS",
+                "need": ["avatar_id", "user_id", "trigger", "photos[]"],
+            }
+
         work_dir = f"{BASE_VOLUME}/avatars/{user_id}/{avatar_id}"
         raw_dir = f"{work_dir}/raw"
         dataset_dir = f"{work_dir}/dataset"
@@ -37,14 +50,18 @@ def handler(event: Dict[str, Any]) -> Dict[str, Any]:
         os.makedirs(dataset_dir, exist_ok=True)
         os.makedirs(os.path.dirname(final_lora_local), exist_ok=True)
 
-        # 1) Descargar fotos desde Supabase
-        raw_files = download_objects(photo_paths, raw_dir)
+        print(f"[handler] work_dir={work_dir}")
+        print(f"[handler] raw_dir={raw_dir}")
+        print(f"[handler] dataset_dir={dataset_dir}")
+        print(f"[handler] out_dir={out_dir}")
 
-        # 2) Preparar dataset + captions
+        raw_files = download_objects(photo_paths, raw_dir)
+        print(f"[handler] raw_files={raw_files}")
+
         prepped = simple_prep(raw_files, dataset_dir, max_side=1024)
         write_captions(prepped, trigger)
+        print(f"[handler] dataset prepared, files={prepped}")
 
-        # 3) Entrenar LoRA SDXL
         lora_local_tmp = train_sdxl_lora({
             "dataset_dir": dataset_dir,
             "out_dir": out_dir,
@@ -57,22 +74,28 @@ def handler(event: Dict[str, Any]) -> Dict[str, Any]:
             "grad_acc": input_data.get("grad_acc", 4),
         })
 
-        # Normalizamos el nombre final
+        print(f"[handler] lora_local_tmp={lora_local_tmp}")
+
         os.replace(lora_local_tmp, final_lora_local)
+        print(f"[handler] final_lora_local={final_lora_local}")
 
-        # 4) Subir LoRA a Supabase Storage
-        upload_file(final_lora_local, final_lora_remote, content_type="application/octet-stream")
+        uploaded_path = upload_file(
+            final_lora_local,
+            final_lora_remote,
+            content_type="application/octet-stream",
+        )
+        print(f"[handler] uploaded_path={uploaded_path}")
 
-        # 5) Borrar fotos originales (para ahorrar espacio)
         if DELETE_TRAINING_PHOTOS:
             delete_objects(photo_paths)
+            print("[handler] training photos deleted")
 
         return {
             "ok": True,
             "avatar_id": avatar_id,
             "user_id": user_id,
             "trigger": trigger,
-            "lora_bucket_path": final_lora_remote,
+            "lora_bucket_path": uploaded_path,
             "deleted_training_photos": bool(DELETE_TRAINING_PHOTOS),
         }
 
@@ -80,5 +103,6 @@ def handler(event: Dict[str, Any]) -> Dict[str, Any]:
         print("[avatar_train ERROR]", repr(e))
         traceback.print_exc()
         return {"ok": False, "error": str(e)}
+
 
 runpod.serverless.start({"handler": handler})
