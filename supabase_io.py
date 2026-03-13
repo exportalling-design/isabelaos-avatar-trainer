@@ -2,9 +2,7 @@ import os
 import time
 from typing import List, Optional
 
-from httpx import Timeout
 from supabase import Client, create_client
-from supabase.lib.client_options import ClientOptions
 
 from config import (
     SUPABASE_URL,
@@ -14,32 +12,17 @@ from config import (
 
 
 def get_sb() -> Client:
+
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
 
-    timeout = Timeout(60.0, connect=20.0, read=60.0, write=60.0)
-
-    options = ClientOptions(
-        http_client_timeout=timeout
-    )
-
     return create_client(
         SUPABASE_URL,
-        SUPABASE_SERVICE_ROLE_KEY,
-        options=options,
+        SUPABASE_SERVICE_ROLE_KEY
     )
 
 
 def _normalize_storage_path(path: str) -> str:
-    """
-    El bucket se pasa aparte en .from_(bucket),
-    así que aquí el path debe ir SIN el nombre del bucket.
-
-    Ej:
-    avatars/user123/img.jpg -> user123/img.jpg
-    /avatars/user123/img.jpg -> user123/img.jpg
-    user123/img.jpg -> user123/img.jpg
-    """
 
     p = str(path or "").strip().lstrip("/")
 
@@ -75,9 +58,8 @@ def download_objects(paths: List[str], out_dir: str) -> List[str]:
 
                 print(
                     f"[supabase_io] Downloading "
-                    f"original='{original_path}' "
-                    f"normalized='{normalized_path}' "
-                    f"attempt={attempt+1}/3"
+                    f"{normalized_path} "
+                    f"attempt {attempt+1}/3"
                 )
 
                 data = sb.storage.from_(SUPABASE_AVATAR_BUCKET).download(
@@ -103,10 +85,9 @@ def download_objects(paths: List[str], out_dir: str) -> List[str]:
                 last_error = e
 
                 print(
-                    f"[supabase_io] DOWNLOAD FAILED "
-                    f"path='{normalized_path}' "
-                    f"attempt={attempt+1}/3 "
-                    f"error={repr(e)}"
+                    f"[supabase_io] Download failed "
+                    f"{normalized_path} "
+                    f"{repr(e)}"
                 )
 
                 if attempt < 2:
@@ -115,8 +96,7 @@ def download_objects(paths: List[str], out_dir: str) -> List[str]:
         if last_error is not None:
 
             raise RuntimeError(
-                f"Failed to download object after 3 attempts: "
-                f"{normalized_path} ({last_error})"
+                f"Failed downloading {normalized_path} ({last_error})"
             )
 
     return local_files
@@ -134,8 +114,7 @@ def upload_file(
 
     print(
         f"[supabase_io] Uploading "
-        f"local='{local_path}' "
-        f"remote='{normalized_remote}'"
+        f"{local_path} -> {normalized_remote}"
     )
 
     with open(local_path, "rb") as f:
@@ -161,7 +140,7 @@ def delete_objects(paths: List[str]) -> None:
 
     normalized = [_normalize_storage_path(p) for p in paths]
 
-    print(f"[supabase_io] Deleting objects {normalized}")
+    print(f"[supabase_io] Deleting {normalized}")
 
     sb.storage.from_(SUPABASE_AVATAR_BUCKET).remove(normalized)
 
@@ -173,10 +152,4 @@ def set_avatar_status_rpc(
     trigger: Optional[str] = None,
     error: Optional[str] = None,
 ):
-
-    """
-    Placeholder si luego quieres actualizar el estado del avatar
-    directamente desde RunPod con una RPC en Supabase.
-    """
-
     return
