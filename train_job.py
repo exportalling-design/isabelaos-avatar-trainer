@@ -20,11 +20,6 @@ def _is_image(fn: str) -> bool:
     return f.endswith(".jpg") or f.endswith(".jpeg") or f.endswith(".png") or f.endswith(".webp")
 
 def ensure_metadata_jsonl(dataset_dir: str, fallback_trigger: str) -> str:
-    """
-    Crea metadata.jsonl para diffusers usando captions .txt si existen.
-    Formato esperado:
-    {"file_name":"xxx.jpg","text":"caption"}
-    """
     meta_path = os.path.join(dataset_dir, "metadata.jsonl")
     items = []
 
@@ -55,15 +50,6 @@ def ensure_metadata_jsonl(dataset_dir: str, fallback_trigger: str) -> str:
     return meta_path
 
 def ensure_diffusers_sdxl_script(local_dir: str) -> str:
-    """
-    Busca primero el script dentro de la imagen:
-    - /app/scripts/train_text_to_image_lora_sdxl.py
-    - /app/train_text_to_image_lora_sdxl.py
-    - <local_dir>/scripts/train_text_to_image_lora_sdxl.py
-    - <local_dir>/train_text_to_image_lora_sdxl.py
-
-    Si no existe, intenta descargarlo a /tmp.
-    """
     candidates = [
         "/app/scripts/train_text_to_image_lora_sdxl.py",
         "/app/train_text_to_image_lora_sdxl.py",
@@ -93,7 +79,7 @@ def ensure_diffusers_sdxl_script(local_dir: str) -> str:
 
     code = subprocess.call(cmd)
     if code != 0 or not os.path.exists(tmp_path):
-        raise RuntimeError("Could not download diffusers SDXL LoRA training script (no internet?)")
+        raise RuntimeError("Could not download diffusers SDXL LoRA training script")
 
     print(f"[train_job] Downloaded SDXL script to: {tmp_path}")
     return tmp_path
@@ -119,13 +105,9 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     env["DIFFUSERS_CACHE"] = DIFFUSERS_CACHE
     env["TORCH_HOME"] = TORCH_HOME
 
-    # 1) Crear metadata.jsonl
     ensure_metadata_jsonl(dataset_dir, fallback_trigger=trigger)
-
-    # 2) Encontrar / descargar script
     script = ensure_diffusers_sdxl_script(local_dir=os.path.dirname(__file__))
 
-    # 3) Ejecutar entrenamiento
     cmd = [
         "accelerate", "launch",
         "--mixed_precision=fp16",
@@ -144,15 +126,9 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
         "--seed", "42",
     ]
 
-    # Solo usa --lora_alpha si tu script realmente lo soporta
-    # Muchos scripts oficiales de diffusers usan solo --rank
-    if alpha:
-        pass
-
-    print(f"[train_job] Running SDXL LoRA script: {script}")
+    print(f"[train_job] Running script: {script}")
     run_cmd(cmd, env=env)
 
-    # 4) Buscar .safetensors
     candidates = []
     for fn in os.listdir(out_dir):
         if fn.endswith(".safetensors"):
