@@ -148,7 +148,7 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     cmd = [
         "accelerate",
         "launch",
-        "--mixed_precision=fp16",
+        "--mixed_precision=no",
         script,
         "--pretrained_model_name_or_path",
         SDXL_BASE_ID,
@@ -183,6 +183,9 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
         "--seed",
         "42",
     ]
+
+    print("[train_job] Running command:")
+    print(" ".join(cmd))
 
     run_cmd(cmd, env=env)
 
