@@ -112,11 +112,15 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     out_dir = job["out_dir"]
     trigger = job["trigger"]
 
-    steps = int(job.get("steps", 1200))
+    # ✅ defaults livianos para prueba rápida
+    steps = int(job.get("steps", 200))
     lr = float(job.get("lr", 1e-4))
     rank = int(job.get("rank", 16))
     batch = int(job.get("batch", 1))
-    grad_acc = int(job.get("grad_acc", 4))
+    grad_acc = int(job.get("grad_acc", 1))
+
+    # ✅ resolución baja para que no explote tiempo/memoria
+    resolution = int(job.get("resolution", 512))
 
     os.makedirs(out_dir, exist_ok=True)
 
@@ -155,7 +159,7 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
         "--train_data_dir",
         dataset_dir,
         "--resolution",
-        "1024",
+        str(resolution),
         "--train_batch_size",
         str(batch),
         "--gradient_accumulation_steps",
@@ -168,16 +172,12 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
         str(rank),
         "--output_dir",
         out_dir,
+
+        # ✅ para evitar carga extra / timeout
         "--checkpointing_steps",
-        "5000",
-        "--validation_prompt",
-        f"{trigger}, portrait photo",
-        "--num_validation_images",
-        "1",
-        "--validation_epochs",
-        "999999",
+        "0",
         "--report_to",
-        "tensorboard",
+        "none",
         "--dataloader_num_workers",
         "0",
         "--seed",
@@ -196,6 +196,7 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
 
     if candidates:
         candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        print(f"[train_job] Found output safetensors: {candidates[0]}")
         return candidates[0]
 
     raise RuntimeError("No .safetensors produced in output_dir")
