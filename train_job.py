@@ -10,7 +10,7 @@ from config import (
     DIFFUSERS_CACHE,
     TORCH_HOME,
     SDXL_BASE_ID,
-)
+) my
 
 DIFFUSERS_SCRIPT_URL = (
     "https://raw.githubusercontent.com/huggingface/diffusers/v0.29.2/examples/text_to_image/train_text_to_image_lora_sdxl.py"
