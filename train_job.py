@@ -112,9 +112,10 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     out_dir = job["out_dir"]
     trigger = job["trigger"]
 
-    steps = int(job.get("steps", 1200))
+    # ✅ Ajustados para que el archivo final tenga más chance de caber
+    steps = int(job.get("steps", 800))
     lr = float(job.get("lr", 1e-4))
-    rank = int(job.get("rank", 16))
+    rank = int(job.get("rank", 8))
     batch = int(job.get("batch", 1))
     grad_acc = int(job.get("grad_acc", 4))
 
@@ -186,16 +187,23 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
 
     print("[train_job] Running command:")
     print(" ".join(cmd))
+    print(f"[train_job] Config -> steps={steps}, lr={lr}, rank={rank}, batch={batch}, grad_acc={grad_acc}")
 
     run_cmd(cmd, env=env)
 
     candidates = []
     for fn in os.listdir(out_dir):
         if fn.endswith(".safetensors"):
-            candidates.append(os.path.join(out_dir, fn))
+            full = os.path.join(out_dir, fn)
+            size_mb = os.path.getsize(full) / (1024 * 1024)
+            print(f"[train_job] Found output: {full} ({size_mb:.2f} MB)")
+            candidates.append(full)
 
     if candidates:
         candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-        return candidates[0]
+        final_file = candidates[0]
+        final_size_mb = os.path.getsize(final_file) / (1024 * 1024)
+        print(f"[train_job] Final LoRA selected: {final_file} ({final_size_mb:.2f} MB)")
+        return final_file
 
     raise RuntimeError("No .safetensors produced in output_dir")
