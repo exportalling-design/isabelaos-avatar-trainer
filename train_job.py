@@ -10,7 +10,7 @@ from config import (
     DIFFUSERS_CACHE,
     TORCH_HOME,
     SDXL_BASE_ID,
-) my
+)
 
 DIFFUSERS_SCRIPT_URL = (
     "https://raw.githubusercontent.com/huggingface/diffusers/v0.29.2/examples/text_to_image/train_text_to_image_lora_sdxl.py"
@@ -112,10 +112,10 @@ def train_sdxl_lora(job: Dict[str, Any]) -> str:
     out_dir = job["out_dir"]
     trigger = job["trigger"]
 
-    # ✅ Ajustados para que el archivo final tenga más chance de caber
-    steps = int(job.get("steps", 800))
+    # Fuerza límites seguros aunque frontend mande más
+    steps = min(int(job.get("steps", 800)), 800)
     lr = float(job.get("lr", 1e-4))
-    rank = int(job.get("rank", 8))
+    rank = min(int(job.get("rank", 8)), 8)
     batch = int(job.get("batch", 1))
     grad_acc = int(job.get("grad_acc", 4))
 
