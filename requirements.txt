@@ -1,3 +1,4 @@
+
 # requirements.txt — IsabelaOS Comercial Assembler Worker
 # Solo lo necesario — FFmpeg lo hace todo, Python solo orquesta
 
