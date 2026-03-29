@@ -1,7 +1,15 @@
+# runpod.yaml — Configuración del endpoint serverless
+# IsabelaOS Comercial Assembler Worker
 
-build:
-  dockerfile: Dockerfile
+version: "1.0"
 
-runtime:
-  python:
-    entrypoint: rp_train_handler.py
+# El worker es CPU-only — FFmpeg no necesita GPU
+# Usar la GPU más barata disponible (o CPU si RunPod lo permite)
+# En la consola de RunPod seleccionar: RTX 3090 o A4000 (más baratas)
+# El worker es rápido: ~30-60s por comercial de 4 escenas
+
+environment:
+  - PYTHONUNBUFFERED=1
+
+# Timeouts
+# max_job_timeout: 600  # 10 minutos máximo por job (comerciales largos)
