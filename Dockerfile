@@ -1,30 +1,29 @@
 # Dockerfile — IsabelaOS Comercial Assembler Worker
-# Base: Python 3.11 slim con FFmpeg instalado
-FROM python:3.11-slim
- 
-# Instalar FFmpeg y dependencias del sistema
+# Usa jrottenberg/ffmpeg como base — FFmpeg ya incluido, sin apt-get
+FROM jrottenberg/ffmpeg:4.4-ubuntu2004
+
+# Instalar Python 3.11
 RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    ffprobe \
-    curl \
+    python3.11 \
+    python3.11-distutils \
+    python3-pip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
- 
-# Verificar instalación de FFmpeg
-RUN ffmpeg -version && ffprobe -version
- 
-# Directorio de trabajo
+
+# Hacer python3.11 el default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+
+# Verificar
+RUN python --version && ffmpeg -version
+
 WORKDIR /app
- 
-# Copiar dependencias primero (para cache de Docker layers)
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
- 
-# Copiar código del worker
+
 COPY handler.py .
- 
-# Variable de entorno para RunPod
+
 ENV PYTHONUNBUFFERED=1
- 
-# Comando de inicio
+
 CMD ["python", "-u", "handler.py"]
