@@ -1,21 +1,9 @@
 # Dockerfile — IsabelaOS Comercial Assembler Worker
-# Usa jrottenberg/ffmpeg como base — FFmpeg ya incluido, sin apt-get
-FROM jrottenberg/ffmpeg:4.4-ubuntu2004
+# Base oficial de RunPod — apt-get funciona correctamente en este entorno
+FROM runpod/base:0.6.2-cuda12.1.0
 
-# Instalar Python 3.11
-RUN apt-get update && apt-get install -y \
-    python3.11 \
-    python3.11-distutils \
-    python3-pip \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Hacer python3.11 el default
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
-
-# Verificar
-RUN python --version && ffmpeg -version
+# FFmpeg disponible en los repos de la imagen base de RunPod
+RUN apt-get update && apt-get install -y ffmpeg && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -26,4 +14,4 @@ COPY handler.py .
 
 ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "-u", "handler.py"]
+CMD ["python3", "-u", "handler.py"]
